@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using System.Threading.Tasks;
 using WorkoutLogger.Models;
 using WorkoutLogger.Services.Abstraction;
@@ -7,8 +8,9 @@ using WorkoutLogger.Services.Abstraction;
 namespace WorkoutLogger.Controllers
 {
     [ApiController]
-    [Route("[controller]")]
-    public class WorkoutController : Controller
+    [Route("api/[controller]")]
+    [Authorize]
+    public class WorkoutController : ControllerBase
     {
         private readonly ILogger<WorkoutController> _logger;
         private readonly IWorkoutService _workoutService;
@@ -40,9 +42,14 @@ namespace WorkoutLogger.Controllers
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> Create(WorkoutDto dto)
         {
-            if(!ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage);
+
+                _logger.LogWarning("Validation failed: {Errors}", string.Join(", ", errors));
+                return BadRequest(new { Errors = errors });
             }
 
             await _workoutService.CreateWorkoutAsync(dto);
