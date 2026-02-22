@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: tainted
+      POSTGRES_DB: workoutlogger
+    volumes:
+      - workout-db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    restart: on-failure
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=db;Database=workoutlogger;Username=postgres;Password=tainted"
+      Jwt__Key: "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET"
+      Jwt__Issuer: "WorkoutLogger"
+      Jwt__Audience: "WorkoutLoggerUsers"
+      ASPNETCORE_ENVIRONMENT: "Development"
+    ports:
+      - "5048:80"
+    volumes:
+      - ./:/app:ro
+
+volumes:
+  workout-db-data: {}
