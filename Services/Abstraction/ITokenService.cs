@@ -1,4 +1,4 @@
-namespace WorkoutLogger.Services
+namespace WorkoutLogger.Services.Abstraction
 {
     public interface ITokenService
     {

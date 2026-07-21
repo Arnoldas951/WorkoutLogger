@@ -42,6 +42,22 @@ namespace WorkoutLogger.Controllers
             }
         }
 
+        [HttpGet("workouts")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> GetWorkouts()
+        {
+            try
+            {
+                var workout = await _workoutService.GetWorkoutsAsync(GetUserId());
+                return Ok(workout);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+        }
+
         [HttpPost]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -79,5 +79,13 @@ namespace WorkoutLogger.Services
 
             await _dbContext.SaveChangesAsync();
         }
+
+        public async Task<List<WorkoutDto>> GetWorkoutsAsync(int userId)
+        {
+            return await _dbContext.Workouts.Include(w => w.Exercises)
+                .Where(w => w.UserId == userId)
+                .Select(w => w.ToDto())
+                .ToListAsync();
+        }
     }
 }
