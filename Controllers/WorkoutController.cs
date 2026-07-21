@@ -1,6 +1,7 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using WorkoutLogger.Models;
 using WorkoutLogger.Services.Abstraction;
@@ -20,6 +21,11 @@ namespace WorkoutLogger.Controllers
             _workoutService = workoutService;
         }
 
+        private int GetUserId()
+        {
+            return int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        }
+
         [HttpGet("{id}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -27,7 +33,7 @@ namespace WorkoutLogger.Controllers
         {
             try
             {
-                var workout = await _workoutService.GetWorkoutByIdAsync(id);
+                var workout = await _workoutService.GetWorkoutByIdAsync(id, GetUserId());
                 return Ok(workout);
             }
             catch (KeyNotFoundException)
@@ -52,7 +58,7 @@ namespace WorkoutLogger.Controllers
                 return BadRequest(new { Errors = errors });
             }
 
-            await _workoutService.CreateWorkoutAsync(dto);
+            await _workoutService.CreateWorkoutAsync(dto, GetUserId());
 
             return Ok();
         }
@@ -63,7 +69,7 @@ namespace WorkoutLogger.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> Delete(int id)
         {
-            await _workoutService.DeleteWorkoutAsync(id);
+            await _workoutService.DeleteWorkoutAsync(id, GetUserId());
             return Ok();
         }
     }

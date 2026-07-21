@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using WorkoutLogger.Models;
-using WorkoutLogger.Services;
+using WorkoutLogger.Services.Abstraction;
 
 namespace WorkoutLogger.Controllers
 {
@@ -8,31 +8,49 @@ namespace WorkoutLogger.Controllers
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
-        private readonly ITokenService _tokenService;
+        private readonly IAuthService _authService;
         private readonly ILogger<AuthController> _logger;
 
-        public AuthController(ITokenService tokenService, ILogger<AuthController> logger)
+        public AuthController(IAuthService authService, ILogger<AuthController> logger)
         {
-            _tokenService = tokenService;
+            _authService = authService;
             _logger = logger;
         }
 
-        [HttpPost("login")]
-        public ActionResult Login([FromBody] LoginRequest request)
+        [HttpPost("register")]
+        public async Task<ActionResult> Register([FromBody] RegisterRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
             {
                 return BadRequest("username and password are required");
             }
 
-            // Demo only: replace with proper user verification
-            if (request.Username == "test" && request.Password == "password")
+            var created = await _authService.RegisterAsync(request.Username, request.Password);
+
+            if (!created)
             {
-                var token = _tokenService.GenerateToken(request.Username);
-                return Ok(new { token });
+                return Conflict("username already taken");
             }
 
-            return Unauthorized();
+            return Ok();
+        }
+
+        [HttpPost("login")]
+        public async Task<ActionResult> Login([FromBody] LoginRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+            {
+                return BadRequest("username and password are required");
+            }
+
+            var token = await _authService.LoginAsync(request.Username, request.Password);
+
+            if (token == null)
+            {
+                return Unauthorized();
+            }
+
+            return Ok(new { token });
         }
     }
 }

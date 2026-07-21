@@ -12,6 +12,9 @@
 
         public string Description { get; set; } = string.Empty;
 
+        public int UserId { get; set; }
+        public User? User { get; set; }
+
         public List<Exercise> Exercises { get; set; } = new();
     }
 }

@@ -27,6 +27,11 @@ namespace WorkoutLogger.Configuration
             builder.Property(w => w.Duration)
                 .HasColumnType("interval")
                 .IsRequired(false);
+
+            builder.HasOne(w => w.User)
+                .WithMany()
+                .HasForeignKey(w => w.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

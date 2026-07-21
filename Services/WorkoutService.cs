@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using WorkoutLogger.Context;
 using WorkoutLogger.Entities;
 using WorkoutLogger.Mappers;
@@ -16,9 +16,10 @@ namespace WorkoutLogger.Services
             _logger = logger;
         }
 
-        public async Task<int> CreateWorkoutAsync(WorkoutDto createWorkoutDto)
+        public async Task<int> CreateWorkoutAsync(WorkoutDto createWorkoutDto, int userId)
         {
             var workout = createWorkoutDto.ToEntity();
+            workout.UserId = userId;
 
             _dbContext.Workouts.Add(workout);
 
@@ -27,9 +28,9 @@ namespace WorkoutLogger.Services
             return workout.Id;
         }
 
-        public async Task<bool> DeleteWorkoutAsync(int id)
+        public async Task<bool> DeleteWorkoutAsync(int id, int userId)
         {
-            var workoutToDelete = await _dbContext.Workouts.FirstOrDefaultAsync(f => f.Id == id);
+            var workoutToDelete = await _dbContext.Workouts.FirstOrDefaultAsync(f => f.Id == id && f.UserId == userId);
 
             if(workoutToDelete == null)
             {
@@ -43,17 +44,18 @@ namespace WorkoutLogger.Services
             return true;
         }
 
-        public async Task<IEnumerable<WorkoutDto>> GetAllWorkoutsAsync()
+        public async Task<IEnumerable<WorkoutDto>> GetAllWorkoutsAsync(int userId)
         {
             return await _dbContext.Workouts.Include(w => w.Exercises)
+                .Where(w => w.UserId == userId)
                 .Select(w => w.ToDto())
                 .ToListAsync();
         }
 
-        public async Task<WorkoutDto> GetWorkoutByIdAsync(int id)
+        public async Task<WorkoutDto> GetWorkoutByIdAsync(int id, int userId)
         {
             var workout = await _dbContext.Workouts.Include(w => w.Exercises)
-                .Where(w => w.Id == id)
+                .Where(w => w.Id == id && w.UserId == userId)
                 .Select(w => w.ToDto())
                 .FirstOrDefaultAsync();
 
@@ -65,10 +67,10 @@ namespace WorkoutLogger.Services
             return workout;
         }
 
-        public async Task UpdateWorkoutAsync(int id, WorkoutDto updateWorkoutDto)
+        public async Task UpdateWorkoutAsync(int id, WorkoutDto updateWorkoutDto, int userId)
         {
             var workout = await _dbContext.Workouts.Include(w => w.Exercises)
-                .FirstOrDefaultAsync(w => w.Id == id);
+                .FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId);
 
             if(workout == null)
                 throw new KeyNotFoundException($"Workout with id {id} not found.");

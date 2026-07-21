@@ -15,7 +15,7 @@ namespace WorkoutLogger.Services
             _configuration = configuration;
         }
 
-        public string GenerateToken(string username)
+        public string GenerateToken(int userId, string username)
         {
             var jwtSection = _configuration.GetSection("Jwt");
             var key = jwtSection["Key"];
@@ -26,6 +26,7 @@ namespace WorkoutLogger.Services
             var claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, username),
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                 new Claim(ClaimTypes.Name, username),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
