@@ -13,7 +13,6 @@ namespace WorkoutLogger.Mappers
                 Name = dto.Name,
                 Repetitions = dto.Repetitions,
                 Sets = dto.Sets,
-                WorkoutId = dto.WorkoutId,
                 Weight = dto.Weight,
                 Notes = dto.Notes
             };
@@ -37,7 +36,6 @@ namespace WorkoutLogger.Mappers
             entity.Name = dto.Name;
             entity.Repetitions = dto.Repetitions;
             entity.Sets = dto.Sets;
-            entity.WorkoutId = dto.WorkoutId;
             entity.Weight = dto.Weight;
             entity.Notes = dto.Notes;
             return entity;

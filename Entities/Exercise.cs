@@ -17,6 +17,6 @@ namespace WorkoutLogger.Entities
 
         public double Weight { get; set; } // in kilograms
 
-        public string Notes { get; set; }
+        public string? Notes { get; set; }
     }
 }

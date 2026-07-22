@@ -37,6 +37,7 @@ else
     })
     .AddJwtBearer(options =>
     {
+        options.MapInboundClaims = false; // keep claim types as issued (avoid "sub" being remapped onto NameIdentifier)
         options.RequireHttpsMetadata = false; // set to true in production
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters

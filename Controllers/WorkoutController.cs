@@ -42,24 +42,16 @@ namespace WorkoutLogger.Controllers
             }
         }
 
-        [HttpGet("workouts")]
+        [HttpGet]
         [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> GetWorkouts()
         {
-            try
-            {
-                var workout = await _workoutService.GetWorkoutsAsync(GetUserId());
-                return Ok(workout);
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
+            var workouts = await _workoutService.GetWorkoutsAsync(GetUserId());
+            return Ok(workouts);
         }
 
         [HttpPost]
-        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> Create(WorkoutDto dto)
@@ -74,9 +66,9 @@ namespace WorkoutLogger.Controllers
                 return BadRequest(new { Errors = errors });
             }
 
-            await _workoutService.CreateWorkoutAsync(dto, GetUserId());
+            var id = await _workoutService.CreateWorkoutAsync(dto, GetUserId());
 
-            return Ok();
+            return CreatedAtAction(nameof(Get), new { id }, null);
         }
 
 
@@ -85,8 +77,28 @@ namespace WorkoutLogger.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> Delete(int id)
         {
-            await _workoutService.DeleteWorkoutAsync(id, GetUserId());
-            return Ok();
+            var deleted = await _workoutService.DeleteWorkoutAsync(id, GetUserId());
+
+            if (!deleted)
+                return NotFound();
+
+            return NoContent();
+        }
+
+        [HttpPut("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> UpdateWorkout(int id, WorkoutDto workout)
+        {
+            try
+            {
+                await _workoutService.UpdateWorkoutAsync(id, workout, GetUserId());
+                return NoContent();
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
         }
     }
 }
