@@ -17,4 +17,11 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="WorkoutLogger.Tests\**\*.cs" />
+    <Content Remove="WorkoutLogger.Tests\**\*" />
+    <EmbeddedResource Remove="WorkoutLogger.Tests\**\*" />
+    <None Remove="WorkoutLogger.Tests\**\*" />
+  </ItemGroup>
+
 </Project>
