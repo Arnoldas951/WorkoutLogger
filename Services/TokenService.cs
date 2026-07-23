@@ -19,7 +19,7 @@ namespace WorkoutLogger.Services
         public string GenerateToken(int userId, string username)
         {
             var jwtSection = _configuration.GetSection("Jwt");
-            var key = jwtSection["Key"];
+            var key = jwtSection["Key"] ?? throw new InvalidOperationException("Jwt:Key configuration value is missing.");
             var issuer = jwtSection["Issuer"];
             var audience = jwtSection["Audience"];
             var expiryMinutes = int.TryParse(jwtSection["ExpiryMinutes"], out var minutes) ? minutes : 60;

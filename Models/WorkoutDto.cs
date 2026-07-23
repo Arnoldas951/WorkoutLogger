@@ -8,7 +8,7 @@ namespace WorkoutLogger.Models
 
         [Required(ErrorMessage = "Workout name is required")]
         [StringLength(200, ErrorMessage = "Name cannot be longer than 200 characters")]
-        public string Name { get; set; }
+        public string Name { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Date is required")]
         public DateTime Date { get; set; }
@@ -16,7 +16,7 @@ namespace WorkoutLogger.Models
         public TimeSpan? Duration { get; set; }
 
         [StringLength(1000, ErrorMessage = "Description cannot be longer than 1000 characters")]
-        public string Description { get; set; }
+        public string Description { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "At least one exercise is required")]
         [MinLength(1, ErrorMessage = "Workout must contain at least one exercise")]

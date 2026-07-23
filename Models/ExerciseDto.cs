@@ -21,6 +21,6 @@ namespace WorkoutLogger.Models
         public double Weight { get; set; } // in kilograms
 
         [StringLength(500, ErrorMessage = "Notes cannot be longer than 500 characters")]
-        public string Notes { get; set; } = string.Empty;
+        public string? Notes { get; set; } = string.Empty;
     }
 }
