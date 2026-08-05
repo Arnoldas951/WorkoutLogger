@@ -1,6 +1,144 @@
 @WorkoutLogger_HostAddress = http://localhost:5048
 
-GET {{WorkoutLogger_HostAddress}}/weatherforecast/
-Accept: application/json
+### Register
+POST {{WorkoutLogger_HostAddress}}/api/auth/register
+Content-Type: application/json
 
-###
+{
+  "username": "arnas",
+  "password": "changeme123"
+}
+
+### Login - returns accessToken + refreshToken
+# @name login
+POST {{WorkoutLogger_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "arnas",
+  "password": "changeme123"
+}
+
+@token = {{login.response.body.accessToken}}
+@refresh = {{login.response.body.refreshToken}}
+
+### Refresh - the presented token is revoked, so store what comes back.
+# Running this twice with the same value trips replay detection and kills
+# every session for the user. That is intentional; see SECURITY.md.
+# @name refreshed
+POST {{WorkoutLogger_HostAddress}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh}}"
+}
+
+### Create a workout with real per-set data
+POST {{WorkoutLogger_HostAddress}}/api/workout
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Push day",
+  "date": "2026-08-05T18:30:00",
+  "duration": "01:05:00",
+  "description": "Chest and triceps",
+  "exercises": [
+    {
+      "name": "Bench press",
+      "notes": "Paused reps",
+      "sets": [
+        { "repetitions": 12, "weight": 40, "isWarmup": true },
+        { "repetitions": 10, "weight": 60, "rpe": 7 },
+        { "repetitions": 8,  "weight": 65, "rpe": 8 },
+        { "repetitions": 6,  "weight": 70, "rpe": 9.5 }
+      ]
+    },
+    {
+      "name": "Incline dumbbell press",
+      "sets": [
+        { "repetitions": 12, "weight": 22.5, "isWarmup": false },
+        { "repetitions": 12, "weight": 22.5, "isWarmup": false }
+      ]
+    }
+  ]
+}
+
+### Create with a client-generated PublicId, then run it AGAIN.
+# Two calls, one workout: the second updates rather than duplicating. This is
+# what makes a retrying offline sync queue safe.
+POST {{WorkoutLogger_HostAddress}}/api/workout
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "publicId": "8f14e45f-ce0a-4f1b-9d3e-2b7c6a501234",
+  "name": "Logged offline",
+  "date": "2026-08-05T07:00:00",
+  "duration": "00:45:00",
+  "exercises": [
+    {
+      "name": "Squat",
+      "sets": [
+        { "repetitions": 5, "weight": 100 },
+        { "repetitions": 5, "weight": 100 }
+      ]
+    }
+  ]
+}
+
+### List workouts - totalVolume and totalSets come back computed
+GET {{WorkoutLogger_HostAddress}}/api/workout
+Authorization: Bearer {{token}}
+
+### Full sync - everything, plus the watermark to use next time
+GET {{WorkoutLogger_HostAddress}}/api/workout/changes
+Authorization: Bearer {{token}}
+
+### Delta sync - only what changed since the watermark.
+# Paste syncedAt from the response above.
+GET {{WorkoutLogger_HostAddress}}/api/workout/changes?since=2026-08-05T12:00:00Z
+Authorization: Bearer {{token}}
+
+### Get one workout
+GET {{WorkoutLogger_HostAddress}}/api/workout/1
+Authorization: Bearer {{token}}
+
+### Update - drops the last bench set and edits another.
+# Set ids that are echoed back are updated in place; entries without an id
+# are inserted; anything omitted is deleted.
+PUT {{WorkoutLogger_HostAddress}}/api/workout/1
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "id": 1,
+  "name": "Push day (edited)",
+  "date": "2026-08-05T18:30:00",
+  "duration": "01:10:00",
+  "description": "Chest and triceps",
+  "exercises": [
+    {
+      "id": 1,
+      "name": "Bench press",
+      "sets": [
+        { "id": 1, "repetitions": 12, "weight": 40, "isWarmup": true },
+        { "id": 2, "repetitions": 10, "weight": 62.5, "rpe": 7 },
+        { "repetitions": 8, "weight": 67.5, "rpe": 8 }
+      ]
+    }
+  ]
+}
+
+### Delete
+DELETE {{WorkoutLogger_HostAddress}}/api/workout/1
+Authorization: Bearer {{token}}
+
+### Logout - revokes the refresh token. Always 204, even if it was already dead.
+# The access token stays valid until it expires on its own.
+POST {{WorkoutLogger_HostAddress}}/api/auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh}}"
+}

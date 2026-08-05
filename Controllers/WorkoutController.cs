@@ -26,7 +26,21 @@ namespace WorkoutLogger.Controllers
             return int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         }
 
-        [HttpGet("{id}")]
+        /// <summary>
+        /// Everything created, updated or deleted since the given watermark.
+        /// Omit <paramref name="since"/> for a full sync.
+        ///
+        /// Declared before Get(int) so "changes" is not swallowed by the {id} route.
+        /// </summary>
+        [HttpGet("changes")]
+        [ProducesResponseType(typeof(WorkoutChangesDto), StatusCodes.Status200OK)]
+        public async Task<ActionResult<WorkoutChangesDto>> GetChanges([FromQuery] DateTime? since)
+        {
+            var changes = await _workoutService.GetChangesAsync(GetUserId(), since);
+            return Ok(changes);
+        }
+
+        [HttpGet("{id:int}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> Get(int id)
@@ -72,7 +86,7 @@ namespace WorkoutLogger.Controllers
         }
 
 
-        [HttpDelete("{id}")]
+        [HttpDelete("{id:int}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> Delete(int id)
@@ -85,7 +99,7 @@ namespace WorkoutLogger.Controllers
             return NoContent();
         }
 
-        [HttpPut("{id}")]
+        [HttpPut("{id:int}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> UpdateWorkout(int id, WorkoutDto workout)
