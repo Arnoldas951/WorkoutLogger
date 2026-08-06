@@ -128,10 +128,46 @@ namespace WorkoutLogger.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WorkoutId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkoutId", "Order");
+
+                    b.ToTable("Exercises", (string)null);
+                });
+
+            modelBuilder.Entity("WorkoutLogger.Entities.ExerciseSet", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ExerciseId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsWarmup")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<int>("Repetitions")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Sets")
+                    b.Property<double?>("Rpe")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("SetNumber")
                         .HasColumnType("integer");
 
                     b.Property<double>("Weight")
@@ -139,14 +175,49 @@ namespace WorkoutLogger.Migrations
                         .HasColumnType("double precision")
                         .HasDefaultValue(0.0);
 
-                    b.Property<int>("WorkoutId")
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExerciseId", "SetNumber");
+
+                    b.ToTable("ExerciseSets", (string)null);
+                });
+
+            modelBuilder.Entity("WorkoutLogger.Entities.RefreshToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ReplacedByTokenId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("UserId")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkoutId");
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
 
-                    b.ToTable("Exercises", (string)null);
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshTokens", (string)null);
                 });
 
             modelBuilder.Entity("WorkoutLogger.Entities.User", b =>
@@ -185,7 +256,13 @@ namespace WorkoutLogger.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("Date")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
@@ -200,12 +277,21 @@ namespace WorkoutLogger.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("UserId")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "UpdatedAt");
 
                     b.ToTable("Workouts", (string)null);
                 });
@@ -239,6 +325,28 @@ namespace WorkoutLogger.Migrations
                     b.Navigation("Workout");
                 });
 
+            modelBuilder.Entity("WorkoutLogger.Entities.ExerciseSet", b =>
+                {
+                    b.HasOne("WorkoutLogger.Entities.Exercise", "Exercise")
+                        .WithMany("Sets")
+                        .HasForeignKey("ExerciseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Exercise");
+                });
+
+            modelBuilder.Entity("WorkoutLogger.Entities.RefreshToken", b =>
+                {
+                    b.HasOne("WorkoutLogger.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("WorkoutLogger.Entities.Workout", b =>
                 {
                     b.HasOne("WorkoutLogger.Entities.User", "User")
@@ -248,6 +356,11 @@ namespace WorkoutLogger.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("WorkoutLogger.Entities.Exercise", b =>
+                {
+                    b.Navigation("Sets");
                 });
 
             modelBuilder.Entity("WorkoutLogger.Entities.Workout", b =>
