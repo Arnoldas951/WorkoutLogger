@@ -416,3 +416,11 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Local secrets - never commit these.
+# Real values belong in user-secrets (dev) or environment variables (deployed).
+# See SECURITY.md.
+appsettings.Local.json
+appsettings.*.Local.json
+.env
+.env.local

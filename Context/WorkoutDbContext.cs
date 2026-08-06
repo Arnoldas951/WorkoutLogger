@@ -11,6 +11,7 @@ namespace WorkoutLogger.Context
 
         public DbSet<Workout> Workouts { get; set; }
         public DbSet<Exercise> Exercises { get; set; }
+        public DbSet<ExerciseSet> ExerciseSets { get; set; }
         public DbSet<User> Users { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<Activity> Activities { get; set; }
