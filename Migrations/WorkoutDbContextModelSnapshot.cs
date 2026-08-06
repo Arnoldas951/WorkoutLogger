@@ -22,6 +22,95 @@ namespace WorkoutLogger.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("WorkoutLogger.Entities.Activity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<double?>("ActiveCalories")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("ActivityType")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<int?>("AverageHeartRate")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("DistanceMeters")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("MaxHeartRate")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MinHeartRate")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("Steps")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<double?>("TotalCalories")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("WorkoutId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkoutId");
+
+                    b.HasIndex("UserId", "ExternalId")
+                        .IsUnique()
+                        .HasFilter("\"ExternalId\" IS NOT NULL");
+
+                    b.HasIndex("UserId", "StartTime");
+
+                    b.HasIndex("UserId", "UpdatedAt");
+
+                    b.ToTable("Activities", (string)null);
+                });
+
             modelBuilder.Entity("WorkoutLogger.Entities.Exercise", b =>
                 {
                     b.Property<int>("Id")
@@ -121,6 +210,24 @@ namespace WorkoutLogger.Migrations
                     b.ToTable("Workouts", (string)null);
                 });
 
+            modelBuilder.Entity("WorkoutLogger.Entities.Activity", b =>
+                {
+                    b.HasOne("WorkoutLogger.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("WorkoutLogger.Entities.Workout", "Workout")
+                        .WithMany("Activities")
+                        .HasForeignKey("WorkoutId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("User");
+
+                    b.Navigation("Workout");
+                });
+
             modelBuilder.Entity("WorkoutLogger.Entities.Exercise", b =>
                 {
                     b.HasOne("WorkoutLogger.Entities.Workout", "Workout")
@@ -145,6 +252,8 @@ namespace WorkoutLogger.Migrations
 
             modelBuilder.Entity("WorkoutLogger.Entities.Workout", b =>
                 {
+                    b.Navigation("Activities");
+
                     b.Navigation("Exercises");
                 });
 #pragma warning restore 612, 618

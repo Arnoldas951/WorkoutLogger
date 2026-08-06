@@ -37,7 +37,31 @@ namespace WorkoutLogger.Services
                 return false;
             }
 
-            _dbContext.Workouts.Remove(workoutToDelete);
+            var now = DateTime.UtcNow;
+
+            // Tombstone rather than remove. A row that simply vanishes is invisible
+            // to other devices, which would treat the workout as one they had not
+            // synced yet and push it straight back.
+            workoutToDelete.DeletedAt = now;
+            workoutToDelete.UpdatedAt = now;
+
+            // Release any attached watch recordings rather than deleting them.
+            // That data came off the device and cannot be recreated, so it
+            // outlives the sets someone typed alongside it and becomes available
+            // to attach to something else.
+            //
+            // The FK is configured OnDelete(SetNull), but that only fires on a
+            // hard delete - with a tombstone the link would otherwise survive and
+            // the activity would stay invisible to overlap suggestions forever.
+            var attached = await _dbContext.Activities
+                .Where(a => a.WorkoutId == workoutToDelete.Id)
+                .ToListAsync();
+
+            foreach (var activity in attached)
+            {
+                activity.WorkoutId = null;
+                activity.UpdatedAt = now;
+            }
 
             await _dbContext.SaveChangesAsync();
 

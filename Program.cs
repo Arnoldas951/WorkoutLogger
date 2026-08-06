@@ -16,6 +16,7 @@ builder.Services.AddDbContext<WorkoutDbContext>(options =>
 
 // register application services
 builder.Services.AddScoped<IWorkoutService, WorkoutService>();
+builder.Services.AddScoped<IActivityService, ActivityService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 // configure JWT authentication
