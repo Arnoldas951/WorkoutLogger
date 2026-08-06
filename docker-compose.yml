@@ -26,7 +26,9 @@ services:
         condition: service_healthy
     environment:
       ConnectionStrings__DefaultConnection: "Host=db;Database=workoutlogger;Username=postgres;Password=tainted"
-      Jwt__Key: "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET"
+      # Read from the host environment or a .env file next to this compose file.
+      # The app refuses to start if this is unset or under 32 bytes - see SECURITY.md.
+      Jwt__Key: "${JWT_KEY:?set JWT_KEY, e.g. openssl rand -base64 48}"
       Jwt__Issuer: "WorkoutLogger"
       Jwt__Audience: "WorkoutLoggerUsers"
       ASPNETCORE_ENVIRONMENT: "Development"

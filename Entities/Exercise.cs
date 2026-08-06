@@ -1,5 +1,3 @@
-﻿using System.ComponentModel.DataAnnotations;
-
 namespace WorkoutLogger.Entities
 {
     public class Exercise
@@ -11,12 +9,13 @@ namespace WorkoutLogger.Entities
 
         public string Name { get; set; } = string.Empty;
 
-        public int Sets { get; set; }
-
-        public int Repetitions { get; set; }
-
-        public double Weight { get; set; } // in kilograms
+        /// <summary>
+        /// 1-based position of this exercise within the workout.
+        /// </summary>
+        public int Order { get; set; }
 
         public string? Notes { get; set; }
+
+        public List<ExerciseSet> Sets { get; set; } = new();
     }
 }
