@@ -255,6 +255,40 @@ namespace WorkoutLogger.Tests
             Assert.Equal(3, await db.ExerciseSets.CountAsync());
         }
 
+        [Fact]
+        public async Task UpdateWorkoutAsync_ReordersExercisesInPlace()
+        {
+            using var db = CreateContext();
+            var service = new WorkoutService(NullLogger<WorkoutService>.Instance, db);
+
+            var dto = SampleDto();
+            dto.Exercises.Add(new ExerciseDto
+            {
+                Name = "Overhead press",
+                Sets = new List<ExerciseSetDto> { new() { Repetitions = 12, Weight = 30 } }
+            });
+            var id = await service.CreateWorkoutAsync(dto, userId: 1);
+
+            var update = await service.GetWorkoutByIdAsync(id, userId: 1);
+            var benchId = update.Exercises[0].Id;
+            var pressId = update.Exercises[1].Id;
+            var benchSetIds = update.Exercises[0].Sets.Select(s => s.Id).ToList();
+
+            // A move on the phone: same exercises, ids intact, new array order. The
+            // Order values still say the old order, so position has to win over them.
+            update.Exercises.Reverse();
+
+            await service.UpdateWorkoutAsync(id, update, userId: 1);
+
+            var reloaded = await service.GetWorkoutByIdAsync(id, userId: 1);
+            Assert.Equal(new[] { "Overhead press", "Bench press" }, reloaded.Exercises.Select(e => e.Name));
+            Assert.Equal(new[] { 1, 2 }, reloaded.Exercises.Select(e => e.Order));
+            // Moved, not deleted and re-inserted: rows and their sets keep their ids,
+            // so the ids the phone already holds stay valid for the next edit.
+            Assert.Equal(new[] { pressId, benchId }, reloaded.Exercises.Select(e => e.Id));
+            Assert.Equal(benchSetIds, reloaded.Exercises[1].Sets.Select(s => s.Id));
+        }
+
         // ------------------------------------------------------------------
         // Offline sync
         // ------------------------------------------------------------------
@@ -478,6 +512,42 @@ namespace WorkoutLogger.Tests
             Assert.Equal(id, revivedId);
             var workout = Assert.Single(await service.GetWorkoutsAsync(userId: 1));
             Assert.Equal("Back from the dead", workout.Name);
+        }
+
+        [Fact]
+        public async Task CreateWorkoutAsync_KeepsAnInsertedExerciseInPlace_WhenThePublicIdIsPostedAgain()
+        {
+            using var db = CreateContext();
+            var service = new WorkoutService(NullLogger<WorkoutService>.Instance, db);
+
+            var dto = SampleDto();
+            dto.PublicId = Guid.NewGuid();
+            dto.Exercises.Add(new ExerciseDto
+            {
+                Name = "Overhead press",
+                Sets = new List<ExerciseSetDto> { new() { Repetitions = 12, Weight = 30 } }
+            });
+            var id = await service.CreateWorkoutAsync(dto, userId: 1);
+
+            // The phone's push: always a POST, and it never sends Order at all. The
+            // new row is appended to the tracked collection, so anything ordering by
+            // insertion or by id would put it last.
+            var edit = await service.GetWorkoutByIdAsync(id, userId: 1);
+            edit.Exercises.Insert(1, new ExerciseDto
+            {
+                Name = "Incline dumbbell press",
+                Sets = new List<ExerciseSetDto> { new() { Repetitions = 10, Weight = 24 } }
+            });
+            foreach (var exercise in edit.Exercises)
+                exercise.Order = 0;
+
+            Assert.Equal(id, await service.CreateWorkoutAsync(edit, userId: 1));
+
+            var reloaded = await service.GetWorkoutByIdAsync(id, userId: 1);
+            Assert.Equal(
+                new[] { "Bench press", "Incline dumbbell press", "Overhead press" },
+                reloaded.Exercises.Select(e => e.Name));
+            Assert.Equal(new[] { 1, 2, 3 }, reloaded.Exercises.Select(e => e.Order));
         }
     }
 }

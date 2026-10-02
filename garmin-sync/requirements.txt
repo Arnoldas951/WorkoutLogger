@@ -1,0 +1,5 @@
+# Pinned deliberately. This library talks to an undocumented API that Garmin
+# changes without notice; an unpinned upgrade is how a working sync starts
+# failing on a Tuesday. Bump it on purpose, after re-running probe.py.
+garminconnect==0.3.16
+psycopg[binary]==3.2.3

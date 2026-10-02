@@ -16,6 +16,10 @@ namespace WorkoutLogger.Context
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<Activity> Activities { get; set; }
 
+        // Written by the garmin-sync sidecar, read-only from the app's side.
+        public DbSet<GarminDailyMetrics> GarminDailyMetrics { get; set; }
+        public DbSet<GarminActivityDetail> GarminActivityDetails { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Automatically apply all IEntityTypeConfiguration<T> implementations from this assembly

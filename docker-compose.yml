@@ -37,5 +37,34 @@ services:
     volumes:
       - ./:/app:ro
 
+
+  # One-shot, not a long-running service: it is behind a profile so a plain
+  # `docker compose up` does not start it. Run it on demand or from the host's
+  # scheduler:
+  #   docker compose run --rm garmin-sync python probe.py
+  #   docker compose run --rm garmin-sync python sync.py --days 7
+  garmin-sync:
+    profiles: ["tools"]
+    build: ./garmin-sync
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGDATABASE: workoutlogger
+      PGUSER: postgres
+      PGPASSWORD: tainted
+      GARMIN_EMAIL: "${GARMIN_EMAIL:-}"
+      # Needed for the first login only; safe to blank once a token is stored.
+      GARMIN_PASSWORD: "${GARMIN_PASSWORD:-}"
+      GARMIN_SYNC_USER_ID: "${GARMIN_SYNC_USER_ID:-1}"
+      GARMINTOKENS: /tokens
+    volumes:
+      # Tokens survive container rebuilds, so MFA is asked for once.
+      - garmin-tokens:/tokens
+      # probe.py writes its JSON dump here for you to read on the host.
+      - ./garmin-sync/probe-output:/app/probe-output
+
 volumes:
   workout-db-data: {}
+  garmin-tokens: {}
