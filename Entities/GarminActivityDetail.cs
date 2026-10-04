@@ -41,8 +41,11 @@ namespace WorkoutLogger.Entities
         public double? AnaerobicTrainingEffect { get; set; }
         public double? AverageWatts { get; set; }
 
-        // Strength sessions only, and the reason this table is interesting for
-        // a workout logger: the watch counted the sets.
+        // Strength sessions only. ActiveSetCount is trustworthy and is what the
+        // set matching is built on. TotalReps is the sum of the watch's own rep
+        // counts and inherits their unreliability - see GarminExerciseSet.GarminReps -
+        // so it is a raw record, not a figure to report. TotalWeightKg is null in
+        // practice: the watch never knows the load.
         public int? ActiveSetCount { get; set; }
         public int? TotalReps { get; set; }
         public double? TotalWeightKg { get; set; }
@@ -53,6 +56,9 @@ namespace WorkoutLogger.Entities
         /// </summary>
         public int? ActivityId { get; set; }
         public Activity? Activity { get; set; }
+
+        /// <summary>The individual sets, with per-set heart rate and rest.</summary>
+        public List<GarminExerciseSet> Sets { get; set; } = new();
 
         public string RawSummaryJson { get; set; } = "{}";
 

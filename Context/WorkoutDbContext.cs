@@ -19,6 +19,7 @@ namespace WorkoutLogger.Context
         // Written by the garmin-sync sidecar, read-only from the app's side.
         public DbSet<GarminDailyMetrics> GarminDailyMetrics { get; set; }
         public DbSet<GarminActivityDetail> GarminActivityDetails { get; set; }
+        public DbSet<GarminExerciseSet> GarminExerciseSets { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

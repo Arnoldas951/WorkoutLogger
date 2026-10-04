@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15
@@ -58,12 +56,18 @@ services:
       # Needed for the first login only; safe to blank once a token is stored.
       GARMIN_PASSWORD: "${GARMIN_PASSWORD:-}"
       GARMIN_SYNC_USER_ID: "${GARMIN_SYNC_USER_ID:-1}"
+      # Overrides PGHOST/PGDATABASE above. Set when the app's data lives
+      # somewhere other than the compose `db` container.
+      GARMIN_SYNC_DSN: "${GARMIN_SYNC_DSN:-}"
       GARMINTOKENS: /tokens
     volumes:
       # Tokens survive container rebuilds, so MFA is asked for once.
       - garmin-tokens:/tokens
-      # probe.py writes its JSON dump here for you to read on the host.
-      - ./garmin-sync/probe-output:/app/probe-output
+      # The source, mounted rather than only baked into the image, so editing a
+      # script takes effect on the next `run` without a rebuild. The image still
+      # carries a copy, so it works without this mount too. Writable because
+      # probe.py writes probe-output/ in here for you to read on the host.
+      - ./garmin-sync:/app
 
 volumes:
   workout-db-data: {}

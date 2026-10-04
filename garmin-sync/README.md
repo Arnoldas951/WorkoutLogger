@@ -3,20 +3,70 @@
 Pulls Garmin Connect data into the WorkoutLogger database, as a sidecar
 container beside `api` and `db`.
 
-## Order of operations
+## Step by step
 
-**Your API never needs to be running.** The sidecar talks to Postgres directly;
-it does not go through the API, and the probe does not touch Postgres at all.
+Run everything from the **repo root** (where `docker-compose.yml` is), not from
+this folder. Your API does **not** need to be running at any point — the sidecar
+talks to Postgres directly, and the probe does not touch Postgres at all.
 
-| # | Step | Needs |
-|---|------|-------|
-| 1 | Fill in `.env` (incl. `JWT_KEY`, see below) | nothing |
-| 2 | `docker compose run --rm garmin-sync python probe.py` | a Garmin login. **No database, no migration, no API.** Writes JSON to `probe-output/` and prints a report. |
-| 3 | *Read the report and decide whether this is worth continuing.* | — |
-| 4 | `dotnet ef migrations add AddGarminTables && dotnet ef database update` | the database the app actually uses |
-| 5 | `docker compose run --rm garmin-sync python sync.py` | the tables from step 4 |
+### 1. Check `.env` exists in the repo root and is filled in
 
-Steps 4 and 5 are pointless until step 3 says the data is good enough to keep.
+    GARMIN_EMAIL=<your Garmin Connect login>
+    GARMIN_PASSWORD=<your Garmin password>      <- required for the FIRST login
+    GARMIN_SYNC_USER_ID=<Id from your Users table>
+    JWT_KEY=REPLACE_ME
+
+Edit `.env`, **never** `.env.example` — only `.env` is gitignored.
+
+### 2. Build the image
+
+    docker compose build garmin-sync
+
+First build takes a minute or two.
+
+### 3. Run the probe — note the explicit `python probe.py`
+
+    docker compose run --rm garmin-sync python probe.py
+
+**The arguments matter.** `docker compose run --rm garmin-sync` with nothing
+after it runs the image's default command, which is `sync.py`, not the probe.
+
+Run it from a terminal you can type into: if your Garmin account has 2FA it will
+ask for a code.
+
+### 4. Confirm it actually worked
+
+Success looks like a long report ending in a line like
+`21 endpoints probed: 17 returned data, 3 empty, 1 errored`, and:
+
+    ls garmin-sync/probe-output
+
+should list ~20 `.json` files. **An empty `probe-output/` means the probe did not
+run**, whatever the exit code said.
+
+### 5. Blank the password
+
+Once step 3 succeeds a token is stored in the `garmin-tokens` volume and rotates
+on its own. Set `GARMIN_PASSWORD=` empty in `.env` so your Garmin password is not
+sitting in plaintext. Put it back only if the token is ever revoked.
+
+### 6. Read the report, then decide
+
+Everything past here is only worth doing if the report says the data is good
+enough — in particular whether `activity_exercise_sets` came back populated.
+
+### 7. Only then: create the tables and sync
+
+    dotnet ef migrations add AddGarminExerciseSets
+    dotnet ef database update
+    docker compose run --rm garmin-sync python sync.py
+
+`AddGarminTables` already exists. `AddGarminExerciseSets` is a **second**
+migration rather than a regeneration of the first, so it applies cleanly whether
+or not you have already run `database update`.
+
+`dotnet ef` must point at the same database the app uses; see "Which database"
+below.
 
 ## Why this and not the alternatives
 
@@ -35,30 +85,6 @@ the only real question is which reverse-engineering breaks least often.
 
 It can still break. The library survived the March change, which is the
 evidence available, not a guarantee.
-
-## First run
-
-1. `cp garmin-sync/.env.example .env` in the repo root, and fill it in.
-
-   `GARMIN_EMAIL` / `GARMIN_PASSWORD` are your real Garmin Connect login —
-   Garmin issues no app passwords or personal OAuth tokens, so there is no
-   lesser credential available. `GARMIN_SYNC_USER_ID` is **not** a Garmin
-   value: it is the `Id` from your own `Users` table.
-
-2. Apply the migration (the tables do not exist yet):
-
-       dotnet ef migrations add AddGarminTables
-       dotnet ef database update
-
-3. Log in once, interactively, so MFA can be answered:
-
-       docker compose run --rm garmin-sync python probe.py
-
-   The token is written to the `garmin-tokens` volume and reused after that.
-
-4. **Blank `GARMIN_PASSWORD` in `.env`.** Once a token exists the password is
-   dead weight sitting in plaintext; the sync authenticates with the rotating
-   refresh token instead. Put it back only if the token is ever revoked.
 
 ## Two things that bite on the first run
 
@@ -115,6 +141,69 @@ why `GarminActivityDetails.ActivityId` is nullable. Unmatched is normal.
 
 Failing to reach Garmin exits 0 with a warning, so a scheduled run does not page
 you over an upstream change you cannot do anything about at 3am.
+
+## Per-set heart rate and rest, matched to your logged sets
+
+| comes from the phone | comes from the watch |
+|---|---|
+| exercise name | heart rate avg / max / min per set |
+| **reps** | rest seconds after each set |
+| weight | set timing |
+
+**Reps come from the phone, always.** The watch's rep counter does not just
+drift, it fails: 10 kettlebell adductors are reported as 0. `GarminReps` is
+stored as a raw record of what the device claimed and is never displayed beside
+the logged reps, where a wrong number reads as a correction. Garmin's exercise
+`category` is equally unusable — the literal string `UNKNOWN` on 11 of 30 sets
+in a real session, and `SQUAT` in the middle of a lateral-raise block.
+
+### How sets are matched
+
+Not on reps. An earlier version scored the alignment on rep similarity, which
+was building on sand once the rep counter turned out to fail outright.
+
+What is reliable is structure:
+
+- Both sides are the same session, so both are contiguous and ordered.
+- `ExerciseSet` has no timestamp — only `Exercise.Order` and `SetNumber` — so
+  position is all the two sides share.
+- The log knows exactly how many sets each exercise had.
+
+So the recorded sets partition into one contiguous run per logged exercise, with
+run lengths equal to the logged set counts. **When the totals agree that
+partition is forced and there is nothing to guess.**
+
+When the totals differ, the difference has to land somewhere and no available
+signal says where, so the placement is a stated convention rather than a pretend
+inference:
+
+- **more logged than recorded** → shortfall taken from the last exercises. A
+  watch that stopped or paused loses the end; sets added to the log afterwards
+  are appended at the end too.
+- **more recorded than logged** → extras left unmatched at the front, which is
+  where unlogged warmups are.
+
+Affected sets get `MatchConfidence` 0.5 instead of 1.0, and the sync log names
+the count. Coverage below 50% is a warning: that usually means the wrong
+activity is attached to the workout rather than a bad alignment.
+
+Matching runs over the whole sync window every time, not just newly fetched
+rows, so a workout logged or edited after its watch session was synced is picked
+up on the next run. A re-sync never clears an existing pairing.
+
+### Reading it back
+
+    SELECT e."Name", es."SetNumber", es."Repetitions", es."Weight",
+           g."AverageHeartRate", g."MaxHeartRate", g."RestSecondsAfter",
+           g."GarminReps", g."MatchConfidence"
+    FROM "ExerciseSets" es
+    JOIN "Exercises" e ON e."Id" = es."ExerciseId"
+    LEFT JOIN "GarminExerciseSets" g ON g."ExerciseSetId" = es."Id"
+    WHERE e."WorkoutId" = @id
+    ORDER BY e."Order", es."SetNumber";
+
+`GarminReps` is selected above only so it is visible that the column exists and
+is being ignored. Do not surface it in the app.
 
 ## What is deliberately not here
 

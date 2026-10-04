@@ -26,6 +26,8 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
+import matcher
+import sets as setlib
 from garmin_client import GarminNotConfigured, GarminUnavailable, connect
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
@@ -72,18 +74,49 @@ def safe(label: str, fn: Any) -> Any:
 
 
 def _training_status(payload: dict[str, Any]) -> str | None:
-    """Garmin keys this by device id, so the phrase is two levels down under a
-    key whose name is a serial number. Take the first device that has one."""
-    devices = (payload or {}).get("latestTrainingStatusData") or {}
-    if not isinstance(devices, dict):
-        return None
-    for entry in devices.values():
-        if not isinstance(entry, dict):
-            continue
-        phrase = entry.get("trainingStatusFeedbackPhrase") or entry.get("trainingStatus")
+    """Two shapes exist in the wild, so try both.
+
+    The probe showed this endpoint returning `mostRecentTrainingStatus` (null on
+    a device that does not compute training status at all), while older accounts
+    return `latestTrainingStatusData` keyed by device serial. An earlier version
+    of this function only knew the second shape and so silently returned None
+    for everyone on the first.
+    """
+    payload = payload or {}
+
+    recent = payload.get("mostRecentTrainingStatus")
+    if isinstance(recent, dict):
+        devices = recent.get("latestTrainingStatusData")
+        if isinstance(devices, dict):
+            for entry in devices.values():
+                if isinstance(entry, dict):
+                    phrase = (entry.get("trainingStatusFeedbackPhrase")
+                              or entry.get("trainingStatus"))
+                    if phrase:
+                        return str(phrase)[:40]
+        phrase = recent.get("trainingStatusFeedbackPhrase") or recent.get("trainingStatus")
         if phrase:
             return str(phrase)[:40]
+
+    devices = payload.get("latestTrainingStatusData")
+    if isinstance(devices, dict):
+        for entry in devices.values():
+            if isinstance(entry, dict):
+                phrase = (entry.get("trainingStatusFeedbackPhrase")
+                          or entry.get("trainingStatus"))
+                if phrase:
+                    return str(phrase)[:40]
     return None
+
+
+def _vo2max(max_metrics: dict[str, Any], status: dict[str, Any]) -> float | None:
+    """get_max_metrics came back [] on the probed account, so fall back to the
+    copy carried inside get_training_status. Both are null on a device that does
+    not estimate VO2max at all, which is a legitimate answer, not an error."""
+    direct = _num(max_metrics, "generic", "vo2MaxPreciseValue")
+    if direct is not None:
+        return direct
+    return _num(status, "mostRecentVO2Max", "generic", "vo2MaxPreciseValue")
 
 # --------------------------------------------------------------------------
 # daily metrics
@@ -155,7 +188,7 @@ def sync_day(api: Any, cur: psycopg.Cursor, day: date) -> None:
             "sleep_seconds": _num(sleep, "dailySleepDTO", "sleepTimeSeconds"),
             "readiness": _num(readiness, "score"),
             "training_status": _training_status(status),
-            "vo2max": _num(max_metrics, "generic", "vo2MaxPreciseValue"),
+            "vo2max": _vo2max(max_metrics, status),
             "avg_stress": _num(summary, "averageStressLevel"),
             "raw": Jsonb(raw),
             "now": datetime.now(timezone.utc),
@@ -183,6 +216,9 @@ INSERT INTO "GarminActivityDetails" (
     %(raw_summary)s, %(raw_sets)s, %(now)s, %(now)s
 )
 ON CONFLICT ("UserId", "GarminActivityId") DO UPDATE SET
+    -- StartTime is updated too. It was omitted originally on the assumption it
+    -- never changes, which made the timezone bug above unrepairable by re-sync.
+    "StartTime"               = EXCLUDED."StartTime",
     "EndTime"                 = EXCLUDED."EndTime",
     "Title"                   = EXCLUDED."Title",
     "DurationSeconds"         = EXCLUDED."DurationSeconds",
@@ -198,7 +234,8 @@ ON CONFLICT ("UserId", "GarminActivityId") DO UPDATE SET
     "TotalWeightKg"           = EXCLUDED."TotalWeightKg",
     "RawSummaryJson"          = EXCLUDED."RawSummaryJson",
     "RawSetsJson"             = EXCLUDED."RawSetsJson",
-    "UpdatedAt"               = EXCLUDED."UpdatedAt";
+    "UpdatedAt"               = EXCLUDED."UpdatedAt"
+RETURNING "Id";
 """
 
 # Attach to an existing Health-Connect activity by overlap. Same session
@@ -216,12 +253,136 @@ WHERE g."ActivityId" IS NULL
 """
 
 
+SET_UPSERT = """
+INSERT INTO "GarminExerciseSets" (
+    "GarminActivityDetailId", "SetIndex", "StartTime", "DurationSeconds",
+    "GarminReps", "GarminCategory", "GarminCategoryProbability",
+    "AverageHeartRate", "MaxHeartRate", "MinHeartRate", "RestSecondsAfter",
+    "CreatedAt", "UpdatedAt"
+) VALUES (
+    %(detail_id)s, %(set_index)s, %(start)s, %(duration)s,
+    %(reps)s, %(category)s, %(probability)s,
+    %(hr_avg)s, %(hr_max)s, %(hr_min)s, %(rest_after)s,
+    %(now)s, %(now)s
+)
+ON CONFLICT ("GarminActivityDetailId", "SetIndex") DO UPDATE SET
+    "StartTime"                 = EXCLUDED."StartTime",
+    "DurationSeconds"           = EXCLUDED."DurationSeconds",
+    "GarminReps"                = EXCLUDED."GarminReps",
+    "GarminCategory"            = EXCLUDED."GarminCategory",
+    "GarminCategoryProbability" = EXCLUDED."GarminCategoryProbability",
+    "AverageHeartRate"          = EXCLUDED."AverageHeartRate",
+    "MaxHeartRate"              = EXCLUDED."MaxHeartRate",
+    "MinHeartRate"              = EXCLUDED."MinHeartRate",
+    "RestSecondsAfter"          = EXCLUDED."RestSecondsAfter",
+    "UpdatedAt"                 = EXCLUDED."UpdatedAt";
+    -- ExerciseSetId and MatchConfidence are deliberately NOT touched here.
+    -- The matcher owns them, and a re-sync of the Garmin side must not silently
+    -- discard a pairing (or a hand correction) that is still valid.
+"""
+
+# The logged sets for whichever workout this activity is attached to, in the only
+# order the two sides share: exercise order, then set number.
+LOGGED_SETS_SQL = """
+SELECT es."Id", es."Repetitions", e."Order"
+FROM "GarminActivityDetails" g
+JOIN "Activities"   a  ON a."Id" = g."ActivityId"
+JOIN "Workouts"     w  ON w."Id" = a."WorkoutId"
+JOIN "Exercises"    e  ON e."WorkoutId" = w."Id"
+JOIN "ExerciseSets" es ON es."ExerciseId" = e."Id"
+WHERE g."Id" = %(detail_id)s
+  AND a."DeletedAt" IS NULL
+  AND w."DeletedAt" IS NULL
+ORDER BY e."Order", es."SetNumber";
+"""
+
+GARMIN_SETS_SQL = """
+SELECT "Id", "SetIndex", "GarminReps"
+FROM "GarminExerciseSets"
+WHERE "GarminActivityDetailId" = %(detail_id)s
+ORDER BY "SetIndex";
+"""
+
+APPLY_MATCH_SQL = """
+UPDATE "GarminExerciseSets"
+SET "ExerciseSetId" = %(exercise_set_id)s,
+    "MatchConfidence" = %(confidence)s,
+    "UpdatedAt" = %(now)s
+WHERE "Id" = %(id)s;
+"""
+
+# Activities worth matching: attached to a workout, and carrying sets.
+MATCHABLE_SQL = """
+SELECT DISTINCT g."Id"
+FROM "GarminActivityDetails" g
+JOIN "GarminExerciseSets" s ON s."GarminActivityDetailId" = g."Id"
+WHERE g."UserId" = %(user_id)s
+  AND g."ActivityId" IS NOT NULL
+  AND g."StartTime" >= %(since)s;
+"""
+
+
+def match_sets(cur: psycopg.Cursor, detail_id: int) -> dict[str, Any] | None:
+    """Pair this activity's recorded sets with the logged ones.
+
+    Exercise, reps and weight stay with the logged set - Garmin's labels are
+    unreliable and it never knows the load. What gets attached is heart rate and
+    rest. Where the alignment cannot place a set, the pairing is left null rather
+    than forced.
+    """
+    cur.execute(LOGGED_SETS_SQL, {"detail_id": detail_id})
+    logged = cur.fetchall()
+    cur.execute(GARMIN_SETS_SQL, {"detail_id": detail_id})
+    recorded = cur.fetchall()
+
+    if not logged or not recorded:
+        return None
+
+    # Set counts per exercise are the whole basis of the match. Reps are not
+    # used: the watch's rep counter fails outright on some movements (10
+    # kettlebell adductors reported as 0), so it is not evidence of anything.
+    sizes: list[int] = []
+    current_order = None
+    for _set_id, _reps, order in logged:
+        if order != current_order:
+            sizes.append(0)
+            current_order = order
+        sizes[-1] += 1
+
+    alignment = matcher.align_by_exercise(sizes, len(recorded))
+    now = datetime.now(timezone.utc)
+
+    for logged_i, garmin_i, conf in alignment:
+        if garmin_i is None:
+            continue
+        cur.execute(
+            APPLY_MATCH_SQL,
+            {
+                "id": recorded[garmin_i][0],
+                "exercise_set_id": logged[logged_i][0] if logged_i is not None else None,
+                "confidence": conf,
+                "now": now,
+            },
+        )
+
+    return matcher.summarise(alignment)
+
+
 def _parse(ts: str | None) -> datetime | None:
+    """Parse a Garmin `startTimeGMT` into an AWARE UTC datetime.
+
+    The tzinfo is load-bearing, not decoration. EF maps DateTime to
+    `timestamptz`, and handing psycopg a NAIVE datetime makes Postgres
+    interpret it in the session's TimeZone - Europe/Kiev here - so 08:55 GMT
+    was stored as 08:55+03:00, i.e. 05:55 UTC. Every Garmin row landed three
+    hours early, the +/-5 minute overlap in LINK_SQL could never match, and the
+    symptom looked exactly like "no activity attached".
+    """
     if not ts:
         return None
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
         try:
-            return datetime.strptime(ts, fmt)
+            return datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
     return None
@@ -274,9 +435,66 @@ def sync_activities(api: Any, cur: psycopg.Cursor, start: date, end: date) -> in
                 "now": datetime.now(timezone.utc),
             },
         )
+        detail_id = cur.fetchone()[0]
         count += 1
 
+        if not active:
+            # Nothing to break into sets - a run, a walk, a ride. The heart-rate
+            # series is 170KB+ and only earns that by being windowed per set, so
+            # it is not fetched for these at all.
+            continue
+
+        details = safe("details", lambda: api.get_activity_details(garmin_id))
+        rows = setlib.extract_sets(sets_payload, details)
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            cur.execute(SET_UPSERT, {**row, "detail_id": detail_id, "now": now})
+
+        with_hr = len([r for r in rows if r["hr_avg"] is not None])
+        logger.info(
+            "  activity %s: %d sets, heart rate on %d", garmin_id, len(rows), with_hr
+        )
+
     return count
+
+
+REQUIRED_TABLES = ("GarminDailyMetrics", "GarminActivityDetails", "GarminExerciseSets")
+
+
+def check_schema(cur: psycopg.Cursor) -> list[str]:
+    """Which of our tables are missing from this database.
+
+    Worth a check of its own rather than letting the first INSERT fail: the
+    traceback from psycopg names one table and says nothing about the actual
+    cause, which is almost always that `dotnet ef database update` has not been
+    run, or has been run against a different Postgres than the one this
+    container reaches.
+    """
+    cur.execute(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = ANY(%s)
+        """,
+        (list(REQUIRED_TABLES),),
+    )
+    present = {r[0] for r in cur.fetchall()}
+    return [t for t in REQUIRED_TABLES if t not in present]
+
+
+def describe_database(cur: psycopg.Cursor) -> str:
+    """Enough to tell 'wrong database' apart from 'migration not applied'."""
+    cur.execute("SELECT current_database(), inet_server_addr()::text, inet_server_port()")
+    db, host, port = cur.fetchone()
+    cur.execute(
+        "SELECT count(*) FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = 'Workouts'"
+    )
+    has_app = cur.fetchone()[0] > 0
+    detail = f"{db} on {host or 'socket'}:{port}"
+    if has_app:
+        cur.execute('SELECT count(*) FROM "Workouts"')
+        return f"{detail} - the app schema IS here ({cur.fetchone()[0]} workouts)"
+    return f"{detail} - the app schema is NOT here either (no Workouts table)"
 
 
 def main() -> int:
@@ -306,6 +524,22 @@ def main() -> int:
 
     with psycopg.connect(dsn()) as conn:
         with conn.cursor() as cur:
+            missing = check_schema(cur)
+            if missing:
+                logger.error(
+                    "These tables do not exist: %s\n"
+                    "Connected to: %s\n"
+                    "The schema is owned by EF Core, not by this sidecar, so it has to be\n"
+                    "created there:\n"
+                    "    dotnet ef migrations add AddGarminExerciseSets   (if not added yet)\n"
+                    "    dotnet ef database update\n"
+                    "If the line above says the app schema is NOT here, then `dotnet ef` is\n"
+                    "pointing at a different Postgres than this container reaches - compare\n"
+                    "its connection string (dotnet user-secrets list) with GARMIN_SYNC_DSN.",
+                    ", ".join(missing), describe_database(cur),
+                )
+                return 3
+
             day = start
             while day <= end:
                 sync_day(api, cur, day)
@@ -316,6 +550,32 @@ def main() -> int:
 
             cur.execute(LINK_SQL)
             logger.info("%d newly linked to a Health Connect activity", cur.rowcount)
+
+            # Matching runs last and over the whole window, not just the rows
+            # touched above: a workout logged or edited after the watch session
+            # was already synced has to get picked up on a later run.
+            cur.execute(MATCHABLE_SQL, {"user_id": USER_ID, "since": start})
+            for (detail_id,) in cur.fetchall():
+                result = match_sets(cur, detail_id)
+                if result is None:
+                    continue
+                if result["coverage"] < 0.5:
+                    logger.warning(
+                        "  activity detail %s: only %.0f%% of sets could be paired "
+                        "(%d logged and %d recorded left over) - check the right "
+                        "activity is attached to the workout",
+                        detail_id, result["coverage"] * 100,
+                        result["logged_unmatched"], result["recorded_unmatched"],
+                    )
+                else:
+                    note = ""
+                    if result["adjusted"]:
+                        note = (f", {result['adjusted']} in an exercise that absorbed "
+                                f"a set-count discrepancy")
+                    logger.info(
+                        "  activity detail %s: %d sets paired, coverage %.0f%%%s",
+                        detail_id, result["matched"], result["coverage"] * 100, note,
+                    )
 
         conn.commit()
 
